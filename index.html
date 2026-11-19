@@ -1,0 +1,1408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Physarum Plate</title>
+<meta name="description" content="Half a million simulated slime-mold agents grow transport networks on your GPU from one local rule.">
+<style>
+/* page reset */
+:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..600,0..100,0..1;1,9..144,300..600,0..100,0..1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a petri dish sitting on a lab bench, with a protocol sheet beside it. The dish stays put while the sheet scrolls. */
+:root {
+  --scheme: 0;
+  --bench: #E4E8E2;
+  --ink: #1A211F;
+  --muted: #56625D;
+  --line: #C7CEC5;
+  --line-strong: #A9B3AA;
+  --chip: #D8DED5;
+  --accent: #8A6200;
+  --accent-ink: #FFF9E6;
+  --glass: rgba(255, 255, 255, 0.55);
+  --rim: rgba(60, 72, 66, 0.28);
+  --shine: rgba(255, 255, 255, 0.9);
+  --shadow: rgba(30, 40, 35, 0.35);
+  /* colors the GPU reads for the plate itself */
+  --agar: #EAE5D3;
+  --agar-edge: #CBC4AA;
+  --oat: #E3CC9C;
+  --lit: #CFE3EE;
+  --strain-1: #F2B200;
+  --strain-2: #E5543F;
+  --strain-3: #1E8C88;
+
+  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --scheme: 1;
+    --bench: #0D1311;
+    --ink: #E2E7E0;
+    --muted: #8C9892;
+    --line: #232D29;
+    --line-strong: #37443F;
+    --chip: #161F1C;
+    --accent: #F2C12E;
+    --accent-ink: #1A1404;
+    --glass: rgba(190, 220, 210, 0.06);
+    --rim: rgba(190, 220, 210, 0.18);
+    --shine: rgba(220, 240, 235, 0.35);
+    --shadow: rgba(0, 0, 0, 0.7);
+    --agar: #111A17;
+    --agar-edge: #1E2925;
+    --oat: #B79F74;
+    --lit: #9FB4BE;
+    --strain-1: #FFC22B;
+    --strain-2: #FF6650;
+    --strain-3: #38D3C4;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --scheme: 1;
+  --bench: #0D1311;
+  --ink: #E2E7E0;
+  --muted: #8C9892;
+  --line: #232D29;
+  --line-strong: #37443F;
+  --chip: #161F1C;
+  --accent: #F2C12E;
+  --accent-ink: #1A1404;
+  --glass: rgba(190, 220, 210, 0.06);
+  --rim: rgba(190, 220, 210, 0.18);
+  --shine: rgba(220, 240, 235, 0.35);
+  --shadow: rgba(0, 0, 0, 0.7);
+  --agar: #111A17;
+  --agar-edge: #1E2925;
+  --oat: #B79F74;
+  --lit: #9FB4BE;
+  --strain-1: #FFC22B;
+  --strain-2: #FF6650;
+  --strain-3: #38D3C4;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  background: var(--bench);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "stage head" "stage body";
+  column-gap: clamp(20px, 3.5vw, 56px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* ---------- stage ---------- */
+.stage {
+  grid-area: stage;
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  align-self: start;
+  height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  min-height: 420px;
+  container-type: size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding-block: 24px;
+  min-width: 0;
+}
+.dish {
+  --d: calc(min(100cqw, 100cqh - 70px) - 32px);
+  position: relative;
+  width: var(--d);
+  height: var(--d);
+  flex: none;
+  border-radius: 50%;
+  isolation: isolate;
+}
+.dish::before {
+  content: "";
+  position: absolute;
+  inset: -13px;
+  border-radius: 50%;
+  background: var(--glass);
+  border: 1px solid var(--rim);
+  box-shadow: 0 34px 60px -34px var(--shadow), inset 0 0 0 4px var(--glass);
+  z-index: -1;
+}
+.dish::after {
+  content: "";
+  position: absolute;
+  inset: -13px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: conic-gradient(from 205deg, transparent 0deg, var(--shine) 22deg, transparent 58deg, transparent 180deg, var(--shine) 196deg, transparent 214deg);
+  -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - 13px), #000 calc(100% - 12px), #000 calc(100% - 9px), transparent calc(100% - 8px));
+          mask: radial-gradient(circle closest-side, transparent calc(100% - 13px), #000 calc(100% - 12px), #000 calc(100% - 9px), transparent calc(100% - 8px));
+  opacity: 0.8;
+}
+#plate {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  cursor: crosshair;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+#plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 16px; }
+.specimen {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+}
+.specimen i { font-family: var(--font-display); font-size: 0.85rem; letter-spacing: 0; color: var(--ink); }
+.fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+}
+.fallback p { max-width: 34ch; color: var(--muted); }
+
+/* ---------- sheet ---------- */
+.head { grid-area: head; padding-top: clamp(24px, 5vh, 56px); padding-bottom: 8px; min-width: 0; }
+.body { grid-area: body; padding-bottom: 64px; min-width: 0; }
+
+.eyebrow {
+  margin: 0 0 14px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.eyebrow i {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 330;
+  font-size: clamp(2.5rem, 1.7rem + 2vw, 3.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.025em;
+  font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144;
+  text-wrap: balance;
+}
+.lede { margin: 18px 0 0; max-width: 38ch; color: var(--ink); font-size: 1rem; }
+.lede em { font-style: normal; color: var(--accent); font-weight: 500; }
+
+.section { padding-block: 20px; border-top: 1px solid var(--line); display: grid; gap: 14px; }
+.section:first-child { border-top: 0; }
+.label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.label span + span { letter-spacing: 0.02em; text-transform: none; }
+
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  font: 500 0.85rem/1 var(--font-body);
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 120ms, border-color 120ms;
+}
+.btn:hover { border-color: var(--ink); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn svg { width: 14px; height: 14px; fill: currentColor; }
+.btn:focus-visible, .chip:focus-visible, .seg label:has(input:focus-visible), select:focus-visible, input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field > span { font-size: 0.78rem; color: var(--muted); }
+select {
+  font: 0.85rem var(--font-body);
+  color: var(--ink);
+  background: var(--chip);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font: 500 0.82rem/1 var(--font-body);
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--chip);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.chip:hover { border-color: var(--line-strong); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bench); border-color: var(--ink); }
+.chip .dots { display: inline-flex; gap: 2px; }
+.chip .dots b { width: 6px; height: 6px; border-radius: 50%; background: var(--strain-1); }
+.chip .dots b:nth-child(2) { background: var(--strain-2); }
+.chip .dots b:nth-child(3) { background: var(--strain-3); }
+.note { margin: 0; font-size: 0.82rem; color: var(--muted); min-height: 2.6em; }
+
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-strong); border-radius: 10px; padding: 3px; gap: 3px; }
+.seg label { position: relative; text-align: center; padding: 8px 6px; border-radius: 7px; font-size: 0.84rem; font-weight: 500; cursor: pointer; color: var(--muted); }
+.seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.seg label:has(input:checked) { background: var(--chip); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+
+figure.diagram { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); background: var(--chip); border-radius: 12px; padding: 10px 12px 8px; }
+figure.diagram svg { width: 100%; height: auto; display: block; overflow: visible; }
+figure.diagram figcaption { font-size: 0.76rem; color: var(--muted); padding-top: 4px; }
+.dg-line { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; }
+.dg-sensor { fill: var(--bench); stroke: var(--ink); stroke-width: 1.4; }
+.dg-sensor.hot { fill: var(--strain-1); }
+.dg-arc { stroke: var(--accent); stroke-width: 1.4; fill: none; }
+.dg-arc.ra { stroke: var(--strain-2); }
+.dg-agent { fill: var(--strain-1); stroke: var(--ink); stroke-width: 1.2; }
+.dg-trail { stroke: var(--strain-1); stroke-width: 5; stroke-linecap: round; fill: none; opacity: 0.45; }
+.dg-step { stroke: var(--ink); stroke-width: 2; fill: none; }
+.dg-head { fill: var(--ink); }
+.dg-text { font: 500 11px var(--font-mono); fill: var(--ink); }
+.dg-head.ra { fill: var(--strain-2); }
+.dg-text.soft { fill: var(--muted); }
+.dg-text.ra { fill: var(--strain-2); }
+.dg-text.sa { fill: var(--accent); }
+
+.ctrls { display: grid; gap: 12px; }
+.ctrl { display: grid; gap: 4px; }
+.ctrl label { display: flex; align-items: baseline; gap: 8px; font-size: 0.84rem; }
+.ctrl label abbr { font: 500 0.68rem var(--font-mono); color: var(--muted); text-decoration: none; letter-spacing: 0.04em; }
+.ctrl output { margin-left: auto; font: 0.78rem var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; height: 22px; background: transparent; }
+
+.prose h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 420;
+  font-style: italic;
+  font-size: 1.45rem;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 72;
+  text-wrap: balance;
+}
+.prose p { margin: 0; max-width: 62ch; }
+.prose p + p { margin-top: 0; }
+.prose .try { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: t; }
+.prose .try li { position: relative; padding-left: 24px; }
+.prose .try li::before { content: "→"; position: absolute; left: 0; top: 0; color: var(--accent); font-family: var(--font-mono); }
+.prose cite { font-style: normal; color: var(--muted); font-size: 0.82rem; display: block; margin-top: 4px; }
+.prose a { color: var(--ink); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.prose a:hover { text-decoration-color: var(--accent); }
+.keys { font-size: 0.78rem; color: var(--muted); margin: 0; }
+kbd { font: 0.72rem var(--font-mono); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--ink); }
+
+@media (max-width: 860px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "head" "stage" "body";
+  }
+  .stage { position: relative; top: auto; height: auto; min-height: 0; container-type: inline-size; padding-block: 28px 8px; }
+  .dish { --d: min(calc(100cqw - 30px), 78vh); }
+  .head { padding-top: 28px; }
+  .lede { max-width: none; }
+}
+@media (pointer: coarse) {
+  .keys { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .chip { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage" aria-label="Simulated petri dish">
+    <div class="dish">
+      <canvas id="plate" tabindex="0" role="img" aria-label="A petri dish where hundreds of thousands of simulated slime-mold agents grow a network of glowing veins."></canvas>
+      <div class="fallback" id="fallback" hidden><p>Loading…</p></div>
+    </div>
+    <p class="specimen" aria-live="off">
+      <span><i>P. polycephalum</i>, simulated</span>
+      <span><span id="stat-agents">0</span> agents</span>
+      <span>step <span id="stat-step">0</span></span>
+    </p>
+  </main>
+
+  <header class="head">
+    <p class="eyebrow">An agent model of <i>Physarum polycephalum</i></p>
+    <h1>Physarum Plate</h1>
+    <p class="lede">Every thread on this plate is drawn by agents that can only sense three points a few pixels ahead. <em>None of them can see the network.</em> Each preset below runs the same rule with different numbers.</p>
+  </header>
+
+  <div class="body">
+    <section class="section" aria-labelledby="h-run">
+      <h2 class="label" id="h-run"><span>Plate</span></h2>
+      <div class="row">
+        <button class="btn primary" id="btn-play" type="button"></button>
+        <button class="btn" id="btn-seed" type="button">Re-seed</button>
+        <button class="btn" id="btn-mutate" type="button">Mutate</button>
+      </div>
+      <div class="fields">
+        <label class="field" for="sel-seed"><span>Start</span>
+          <select id="sel-seed">
+            <option value="scatter">Scattered</option>
+            <option value="inoculum">Inoculum</option>
+            <option value="ring">Ring</option>
+          </select>
+        </label>
+        <label class="field" for="sel-pop"><span>Agents</span>
+          <select id="sel-pop">
+            <option value="131072">131,072</option>
+            <option value="262144">262,144</option>
+            <option value="524288">524,288</option>
+            <option value="1048576">1,048,576</option>
+          </select>
+        </label>
+        <label class="field" for="sel-speed"><span>Speed</span>
+          <select id="sel-speed">
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </label>
+      </div>
+      <p class="keys"><kbd>Space</kbd> pauses · <kbd>R</kbd> re-seeds · <kbd>M</kbd> mutates</p>
+    </section>
+
+    <section class="section" aria-labelledby="h-beh">
+      <h2 class="label" id="h-beh"><span>Behaviour</span><span id="beh-state">Foraging</span></h2>
+      <div class="chips" id="chips" role="group" aria-labelledby="h-beh"></div>
+      <p class="note" id="beh-note"></p>
+    </section>
+
+    <section class="section" aria-labelledby="h-tool">
+      <h2 class="label" id="h-tool"><span>Tool</span></h2>
+      <div class="seg" role="radiogroup" aria-labelledby="h-tool">
+        <label><input type="radio" name="tool" id="tool-oat" value="oat" checked>Oat flake</label>
+        <label><input type="radio" name="tool" id="tool-light" value="light">Light</label>
+        <label><input type="radio" name="tool" id="tool-erase" value="erase">Erase</label>
+      </div>
+      <p class="note" id="tool-note"></p>
+      <div class="row">
+        <button class="btn" id="btn-scatter" type="button">Scatter oat flakes</button>
+        <button class="btn" id="btn-clear" type="button">Clear plate</button>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="h-agent">
+      <h2 class="label" id="h-agent"><span>One agent</span><span>Jones (2010) notation</span></h2>
+      <figure class="diagram">
+        <svg id="diagram" viewBox="0 0 340 205" role="img" aria-label="Diagram of one agent: three sensors ahead of it at the sensor distance, the outer two spread by the sensor angle, and the turn it takes toward the strongest reading."></svg>
+        <figcaption>Each step: sample F, L and R, turn toward the strongest, move SS forward, deposit trail.</figcaption>
+      </figure>
+      <div class="ctrls">
+        <div class="ctrl"><label for="p-sa">Sensor angle <abbr title="SA in Jones (2010)">SA</abbr><output id="o-sa" for="p-sa"></output></label><input type="range" id="p-sa" min="5" max="90" step="0.5"></div>
+        <div class="ctrl"><label for="p-ra">Turn angle <abbr title="RA in Jones (2010)">RA</abbr><output id="o-ra" for="p-ra"></output></label><input type="range" id="p-ra" min="5" max="90" step="0.5"></div>
+        <div class="ctrl"><label for="p-so">Sensor distance <abbr title="SO in Jones (2010)">SO</abbr><output id="o-so" for="p-so"></output></label><input type="range" id="p-so" min="2" max="40" step="0.5"></div>
+        <div class="ctrl"><label for="p-ss">Step size <abbr title="SS in Jones (2010)">SS</abbr><output id="o-ss" for="p-ss"></output></label><input type="range" id="p-ss" min="0.3" max="4" step="0.05"></div>
+        <div class="ctrl"><label for="p-wobble">Wobble <abbr title="random heading noise each step">±</abbr><output id="o-wobble" for="p-wobble"></output></label><input type="range" id="p-wobble" min="0" max="40" step="1"></div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="h-trail">
+      <h2 class="label" id="h-trail"><span>Trail</span><span>the shared memory</span></h2>
+      <div class="ctrls">
+        <div class="ctrl"><label for="p-evap">Evaporation per step<output id="o-evap" for="p-evap"></output></label><input type="range" id="p-evap" min="1" max="40" step="0.5"></div>
+        <div class="ctrl"><label for="p-diff">Diffusion<output id="o-diff" for="p-diff"></output></label><input type="range" id="p-diff" min="0" max="1" step="0.01"></div>
+        <div class="ctrl"><label for="p-sat">Saturation<output id="o-sat" for="p-sat"></output></label><input type="range" id="p-sat" min="1" max="40" step="0.5"></div>
+      </div>
+      <p class="note">Saturation is the trail strength past which an agent can no longer tell two trails apart. It keeps the population spread across the network.</p>
+    </section>
+
+    <section class="section prose" aria-labelledby="h-why">
+      <h2 id="h-why">Why I picked this</h2>
+      <p>You asked for something I find interesting. I keep coming back to systems where complicated structure gets built by parts that cannot see it, and this is the cleanest example I know.</p>
+      <p>Each agent on the plate follows one rule. It samples the trail at three points just ahead, turns toward the strongest reading, takes a step, and leaves a little trail behind. It never looks further than those three points. The veins exist only in aggregate.</p>
+      <p>The memory lives in the dish. Trail evaporates a little every step, so a path survives only while agents keep using it. Every agent reads from that shared medium and writes back to it. Biologists call this stigmergy, coordination through traces left in the environment.</p>
+      <p>There is a personal angle too. I am also a very large number of simple operations reading from and writing to a shared state, and whatever I say comes out of that. I can't watch my own version of this happen. I can watch this one, and change its rules while it runs.</p>
+    </section>
+
+    <section class="section prose" aria-labelledby="h-try">
+      <h2 id="h-try">Things to try</h2>
+      <ul class="try" id="try-list">
+        <li>Leave <b>Foraging</b> running for a minute or two. The fine mesh tightens until mostly tubes between the oat flakes remain.</li>
+        <li>Drag <b>Saturation</b> all the way to the right. With no ceiling on how attractive a trail can be, the whole population piles into a few strands.</li>
+        <li>Choose the <b>Light</b> tool and draw a wall across the plate. Agents route around it, the way the real organism shies away from light.</li>
+        <li>Press <b>Mutate</b> a few times. Each press is the same rule with new numbers, and the plate morphs into the new pattern instead of restarting.</li>
+      </ul>
+    </section>
+
+    <section class="section prose" aria-labelledby="h-real">
+      <h2 id="h-real">The real organism</h2>
+      <p><i>Physarum polycephalum</i> is a single cell with many nuclei and no nervous system. It forages by spreading a web of tubes, thickening the ones that carry the most flow and abandoning the rest.</p>
+      <p>Given food at both ends of a maze, it retracts from dead ends until one tube runs along the shortest route.
+        <cite>Nakagaki, Yamada &amp; Tóth, <a href="https://doi.org/10.1038/35035159" target="_blank" rel="noopener">Nature 407 (2000)</a></cite></p>
+      <p>With oat flakes set where the cities around Tokyo sit, and light standing in for mountains and coast, it grew a network comparable to the region's rail system in cost, efficiency and fault tolerance.
+        <cite>Tero et al., <a href="https://doi.org/10.1126/science.1177894" target="_blank" rel="noopener">Science 327 (2010)</a></cite></p>
+      <p>This plate runs the agent model Jeff Jones proposed for those networks, on your GPU. It swaps his one-agent-per-cell rule for a saturation limit, and adds oat flakes, light and rival strains.
+        <cite>Jones, <a href="https://doi.org/10.1162/artl.2010.16.2.16202" target="_blank" rel="noopener">Artificial Life 16 (2010)</a></cite></p>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const canvas = $('#plate');
+  const fallback = $('#fallback');
+  function fail(msg, err) {
+    if (err) console.error(err);
+    fallback.querySelector('p').textContent = msg;
+    fallback.hidden = false;
+    canvas.style.visibility = 'hidden';
+  }
+
+  // ---------------------------------------------------------------- setup
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
+  if (!gl) { fail('This plate runs on WebGL2, which this browser has turned off or does not support. Recent Chrome, Edge, Firefox and Safari all have it.'); return; }
+  if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) {
+    fail('This plate needs floating-point render targets, which this GPU or browser does not offer.');
+    return;
+  }
+
+  const DEG = Math.PI / 180;
+  const MAX_FOOD = 24;
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const smallScreen = Math.min(screen.width, screen.height) < 700;
+  const S = (coarse || smallScreen) ? 768 : 1024;      // simulation grid, in cells
+  const K = S / 1024;                                  // parameters are written for a 1024 grid
+  const RADIUS = S * 0.5 - 3;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------------------------------------------------------------- shaders
+  const VS_UPDATE = `#version 300 es
+  precision highp float;
+  precision highp sampler2D;
+  layout(location = 0) in vec3 a_state;
+  layout(location = 1) in float a_species;
+  out vec3 v_state;
+  uniform sampler2D u_trail;
+  uniform sampler2D u_light;
+  uniform float u_size;
+  uniform float u_radius;
+  uniform vec4 u_sense;     // sensor angle, turn angle (rad), sensor distance, step (cells)
+  uniform float u_wobble;   // rad
+  uniform uint u_frame;
+  uniform vec4 u_mask[3];
+  uniform float u_lightW;
+  uniform float u_sat;      // receptors saturate: above this, trail strengths read as equal
+
+  uint hash(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }
+  float rnd(inout uint s) { s = hash(s); return float(s) * (1.0 / 4294967296.0); }
+
+  float sense(vec2 p, float a, vec4 m) {
+    vec2 q = (p + vec2(cos(a), sin(a)) * u_sense.z) / u_size;
+    vec4 t = clamp(texture(u_trail, q), 0.0, u_sat);
+    return dot(t.rgb, m.rgb) - texture(u_light, q).r * u_lightW;
+  }
+
+  void main() {
+    vec2 p = a_state.xy;
+    float a = a_state.z;
+    int sp = int(a_species + 0.5);
+    vec4 m = sp == 0 ? u_mask[0] : (sp == 1 ? u_mask[1] : u_mask[2]);
+    uint s = hash(uint(gl_VertexID) ^ hash(u_frame * 747796405u));
+    float F = sense(p, a, m);
+    float L = sense(p, a + u_sense.x, m);
+    float R = sense(p, a - u_sense.x, m);
+    float r1 = rnd(s);
+    float r2 = rnd(s);
+    if (F > L && F > R) {
+    } else if (F < L && F < R) {
+      a += r1 < 0.5 ? u_sense.y : -u_sense.y;
+    } else if (L > R) {
+      a += u_sense.y;
+    } else if (R > L) {
+      a -= u_sense.y;
+    }
+    a += (r2 - 0.5) * u_wobble;
+    vec2 np = p + vec2(cos(a), sin(a)) * u_sense.w;
+    vec2 toC = vec2(0.5 * u_size) - p;
+    if (length(np - vec2(0.5 * u_size)) > u_radius) {
+      a = atan(toC.y, toC.x) + (rnd(s) - 0.5) * 2.6;   // bounce back into the dish
+      np = p;
+    } else if (texture(u_light, np / u_size).r > 0.5) {
+      a = rnd(s) * 6.2831853;                          // too bright: pick a new heading
+      np = p;
+    }
+    v_state = vec3(np, mod(a, 6.2831853));
+  }`;
+
+  const FS_NULL = `#version 300 es
+  precision mediump float;
+  out vec4 o;
+  void main() { o = vec4(0.0); }`;
+
+  const VS_DEPOSIT = `#version 300 es
+  layout(location = 0) in vec3 a_state;
+  layout(location = 1) in float a_species;
+  uniform float u_size;
+  flat out int v_sp;
+  void main() {
+    gl_Position = vec4(a_state.xy / u_size * 2.0 - 1.0, 0.0, 1.0);
+    gl_PointSize = 1.0;
+    v_sp = int(a_species + 0.5);
+  }`;
+
+  const FS_DEPOSIT = `#version 300 es
+  precision highp float;
+  flat in int v_sp;
+  uniform float u_deposit;
+  out vec4 o;
+  void main() {
+    o = vec4(v_sp == 0 ? u_deposit : 0.0, v_sp == 1 ? u_deposit : 0.0, v_sp == 2 ? u_deposit : 0.0, 0.0);
+  }`;
+
+  const VS_QUAD = `#version 300 es
+  out vec2 v_uv;
+  void main() {
+    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    v_uv = p;
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
+
+  const FS_DIFFUSE = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  uniform sampler2D u_trail;
+  uniform float u_size;
+  uniform float u_radius;
+  uniform vec4 u_decay;
+  uniform float u_diffuse;
+  uniform vec3 u_food[${MAX_FOOD}];
+  uniform int u_foodN;
+  uniform float u_foodAmt;
+  out vec4 o;
+  void main() {
+    vec2 px = vec2(1.0 / u_size);
+    vec4 c = texture(u_trail, v_uv);
+    vec4 sum = vec4(0.0);
+    for (int y = -1; y <= 1; y++)
+      for (int x = -1; x <= 1; x++)
+        sum += texture(u_trail, v_uv + vec2(float(x), float(y)) * px);
+    vec4 v = mix(c, sum / 9.0, u_diffuse) * u_decay;
+    vec2 p = v_uv * u_size;
+    float f = 0.0;
+    for (int i = 0; i < ${MAX_FOOD}; i++) {
+      if (i >= u_foodN) break;
+      vec3 fd = u_food[i];
+      f += 1.0 - smoothstep(fd.z * 0.5, fd.z, length(p - fd.xy));
+    }
+    v.rgb += f * u_foodAmt;   // food emits attractant into every strain's trail
+    if (length(p - vec2(0.5 * u_size)) > u_radius + 1.5) v = vec4(0.0);
+    o = v;
+  }`;
+
+  const VS_BRUSH = `#version 300 es
+  layout(location = 0) in vec2 a_pos;
+  uniform float u_size;
+  uniform float u_brush;
+  void main() {
+    gl_Position = vec4(a_pos / u_size * 2.0 - 1.0, 0.0, 1.0);
+    gl_PointSize = u_brush;
+  }`;
+
+  const FS_BRUSH = `#version 300 es
+  precision highp float;
+  uniform float u_amt;
+  out vec4 o;
+  void main() {
+    vec2 d = gl_PointCoord * 2.0 - 1.0;
+    float r2 = dot(d, d);
+    if (r2 > 1.0) discard;
+    o = vec4(u_amt * (1.0 - smoothstep(0.3, 1.0, r2)));
+  }`;
+
+  const FS_RENDER = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  uniform sampler2D u_trail;
+  uniform sampler2D u_light;
+  uniform float u_size;
+  uniform float u_radius;
+  uniform float u_aa;
+  uniform float u_gain;
+  uniform int u_dark;
+  uniform vec3 u_bg;
+  uniform vec3 u_edge;
+  uniform vec3 u_oat;
+  uniform vec3 u_lit;
+  uniform vec3 u_col[3];
+  uniform vec3 u_food[${MAX_FOOD}];
+  uniform int u_foodN;
+  out vec4 o;
+
+  float h21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  float vn(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
+  }
+
+  void main() {
+    vec2 p = v_uv * u_size;
+    float r = length(p - vec2(0.5 * u_size));
+    float inside = 1.0 - smoothstep(u_radius - 1.5 * u_aa, u_radius, r);
+    if (inside <= 0.0) { o = vec4(0.0); return; }
+    vec3 t = max(texture(u_trail, v_uv).rgb, 0.0);
+    vec3 iv = 1.0 - exp(-t * u_gain);
+    float rr = r / u_radius;
+    float grain = h21(floor(p)) - 0.5;
+    float rim = smoothstep(0.78, 1.0, rr);
+    vec3 col;
+    if (u_dark == 1) {
+      col = u_bg * (1.0 + grain * 0.10);
+      col = mix(col, u_edge, rim * rim);
+      vec3 glow = vec3(0.0);
+      for (int k = 0; k < 3; k++) {
+        float v = iv[k];
+        glow += u_col[k] * smoothstep(0.0, 0.8, v);
+        glow += vec3(1.0, 0.97, 0.9) * pow(v, 5.0) * 0.5;
+      }
+      col += glow;
+    } else {
+      col = u_bg * (1.0 + grain * 0.035);
+      col = mix(col, u_edge, rim * rim);
+      for (int k = 0; k < 3; k++) {
+        float v = iv[k];
+        col *= mix(vec3(1.0), u_col[k], smoothstep(0.0, 0.6, v));
+        col *= 1.0 - 0.3 * smoothstep(0.55, 1.0, v);
+      }
+    }
+    float lit = clamp(texture(u_light, v_uv).r, 0.0, 1.0);
+    if (lit > 0.002) {
+      float hatch = step(0.55, fract((p.x - p.y) / 7.0));
+      col = mix(col, u_lit, smoothstep(0.0, 0.6, lit) * (0.55 + 0.35 * hatch));
+    }
+    for (int j = 0; j < ${MAX_FOOD}; j++) {
+      if (j >= u_foodN) break;
+      vec3 f = u_food[j];
+      vec2 d = p - f.xy;
+      if (dot(d, d) > f.z * f.z * 3.0) continue;
+      float a = h21(f.xy) * 6.2831853;
+      vec2 q = mat2(cos(a), sin(a), -sin(a), cos(a)) * d / f.z;
+      q.y /= 0.66;
+      float edge = 0.8 + 0.3 * vn(q * 1.6 + f.xy * 0.37);
+      float dist = length(q) - edge;
+      float m = 1.0 - smoothstep(-0.05, 0.05, dist);
+      float sh = (1.0 - smoothstep(-0.1, 0.5, length(q + vec2(-0.08, 0.14)) - edge)) * 0.22;
+      col *= 1.0 - sh * (1.0 - m);
+      float shade = 0.92 + 0.22 * vn(q * 5.0 + f.xy) - 0.14 * smoothstep(-0.3, 0.0, dist) - 0.06 * q.y;
+      col = mix(col, u_oat * shade, m);
+    }
+    o = vec4(col * inside, inside);
+  }`;
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  function program(vs, fs, varyings) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+    if (varyings) gl.transformFeedbackVaryings(p, varyings, gl.INTERLEAVED_ATTRIBS);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(p, i);
+      u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name);
+    }
+    return { p, u };
+  }
+
+  let progUpdate, progDeposit, progDiffuse, progBrush, progRender;
+  try {
+    progUpdate = program(VS_UPDATE, FS_NULL, ['v_state']);
+    progDeposit = program(VS_DEPOSIT, FS_DEPOSIT);
+    progDiffuse = program(VS_QUAD, FS_DIFFUSE);
+    progBrush = program(VS_BRUSH, FS_BRUSH);
+    progRender = program(VS_QUAD, FS_RENDER);
+  } catch (err) {
+    fail('The simulation shaders did not compile on this GPU.', err);
+    return;
+  }
+
+  // ---------------------------------------------------------------- textures
+  function texture(internal, filter) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, internal, S, S);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  function framebuffer(t) {
+    const f = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('framebuffer incomplete');
+    return f;
+  }
+  let trailTex, trailFbo, lightTex, lightFbo;
+  try {
+    trailTex = [texture(gl.RGBA16F, gl.LINEAR), texture(gl.RGBA16F, gl.LINEAR)];
+    trailFbo = trailTex.map(framebuffer);
+    lightTex = texture(gl.RGBA8, gl.LINEAR);
+    lightFbo = framebuffer(lightTex);
+  } catch (err) {
+    fail('This GPU could not create the trail map the simulation needs.', err);
+    return;
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  let tCur = 0;
+
+  function clearTrail() {
+    gl.clearColor(0, 0, 0, 0);
+    for (const f of trailFbo) { gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.clear(gl.COLOR_BUFFER_BIT); }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  function clearLight() {
+    gl.clearColor(0, 0, 0, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, lightFbo);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  clearTrail();
+  clearLight();
+
+  const emptyVao = gl.createVertexArray();
+  const tf = gl.createTransformFeedback();
+
+  // ---------------------------------------------------------------- parameters
+  const SAT_OFF = 40;   // the slider's far end means "no saturation"
+  const PRESETS = {
+    foraging:  { label: 'Foraging',  sa: 22.5, ra: 45, so: 9,  ss: 1.0, wobble: 3,  evap: 10, diff: 1.0, sat: 3,  strains: 1, repel: 0.4, foodW: 1, exposure: 0.35,
+                 note: 'Jones\u2019s classic numbers: sensors at 22.5\u00b0, turns of 45\u00b0. Over a minute or two the mesh tightens until mostly tubes between the oat flakes remain.' },
+    lattice:   { label: 'Lattice',   sa: 60,   ra: 18, so: 12, ss: 1.0, wobble: 3,  evap: 10, diff: 1.0, sat: 4,  strains: 1, repel: 0.4, foodW: 1, exposure: 0.35,
+                 note: 'Sensor angle well above turn angle. The trail settles into a fine mesh that fills the dish and holds steady.' },
+    foam:      { label: 'Foam',      sa: 80,   ra: 25, so: 25, ss: 1.5, wobble: 2,  evap: 10, diff: 1.0, sat: 6,  strains: 1, repel: 0.4, foodW: 1, exposure: 0.35,
+                 note: 'Sensors spread almost sideways and far out. Cells grow large, with thick doubled walls like soap foam.' },
+    labyrinth: { label: 'Labyrinth', sa: 45,   ra: 80, so: 4,  ss: 1.0, wobble: 2,  evap: 10, diff: 1.0, sat: 6,  strains: 1, repel: 0.4, foodW: 1, exposure: 0.35,
+                 note: 'Short sight and sharp turns. The walls start to wriggle. Re-seed to watch the trail curl into a maze of worm-like corridors.' },
+    strands:   { label: 'Strands',   sa: 22.5, ra: 45, so: 9,  ss: 1.0, wobble: 25, evap: 10, diff: 1.0, sat: SAT_OFF, strains: 1, repel: 0.4, foodW: 1, exposure: 0.3,
+                 note: 'Saturation off. Every agent chases the strongest trail it can find, so the whole population piles into a few thick strands that wander the dish.' },
+    marbling:  { label: 'Marbling',  sa: 30,   ra: 45, so: 12, ss: 1.2, wobble: 3,  evap: 10, diff: 1.0, sat: 3,  strains: 3, repel: 0.4, foodW: 1, exposure: 0.4,
+                 note: 'Three strains, each drawn to its own trail and pushed off by the others\u2019. They comb into interleaved bands that slowly swirl.' },
+  };
+  const KEYS = ['sa', 'ra', 'so', 'ss', 'wobble', 'evap', 'diff', 'repel', 'foodW', 'exposure', 'sat'];
+  const P = { strains: 1 };     // live values
+  const T = {};                 // morph targets
+  let presetName = 'foraging';
+  let seedMode = 'scatter';
+  let paused = false;
+  let tool = 'oat';
+  let frame = 0, steps = 0;
+  let stepsPerFrame = (S === 1024) ? 2 : 1;
+
+  const food = [];              // [x, y, r] in grid cells
+  const foodArr = new Float32Array(MAX_FOOD * 3);
+  const FOOD_R = 15 * K;
+
+  // ---------------------------------------------------------------- agents
+  let N = 0, cur = 0;
+  const stateBuf = [gl.createBuffer(), gl.createBuffer()];
+  const speciesBuf = gl.createBuffer();
+  const vao = [gl.createVertexArray(), gl.createVertexArray()];
+
+  function speciesArray(n, strains) {
+    const sp = new Float32Array(n);
+    for (let i = 0; i < n; i++) sp[i] = i % strains;
+    return sp;
+  }
+
+  function seed(n) {
+    N = n;
+    const st = new Float32Array(n * 3);
+    const c = S / 2, R = RADIUS, strains = P.strains;
+    for (let i = 0; i < n; i++) {
+      const s = i % strains;
+      let th = Math.random() * Math.PI * 2;
+      if (strains > 1 && seedMode !== 'scatter') th = (s + Math.random()) / strains * Math.PI * 2;
+      let rr, a;
+      if (seedMode === 'inoculum') {
+        rr = Math.sqrt(Math.random()) * R * 0.1;
+        a = th + (Math.random() - 0.5) * 0.6;
+      } else if (seedMode === 'ring') {
+        rr = R * (0.7 + Math.random() * 0.08);
+        a = th + Math.PI + (Math.random() - 0.5) * 1.2;
+      } else {
+        rr = Math.sqrt(Math.random()) * R * 0.97;
+        a = Math.random() * Math.PI * 2;
+      }
+      st[i * 3] = c + Math.cos(th) * rr;
+      st[i * 3 + 1] = c + Math.sin(th) * rr;
+      st[i * 3 + 2] = (a + Math.PI * 4) % (Math.PI * 2);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, stateBuf[0]);
+    gl.bufferData(gl.ARRAY_BUFFER, st, gl.DYNAMIC_COPY);
+    gl.bindBuffer(gl.ARRAY_BUFFER, stateBuf[1]);
+    gl.bufferData(gl.ARRAY_BUFFER, st.byteLength, gl.DYNAMIC_COPY);
+    gl.bindBuffer(gl.ARRAY_BUFFER, speciesBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, speciesArray(n, strains), gl.DYNAMIC_DRAW);
+    for (let k = 0; k < 2; k++) {
+      gl.bindVertexArray(vao[k]);
+      gl.bindBuffer(gl.ARRAY_BUFFER, stateBuf[k]);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, speciesBuf);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 4, 0);
+    }
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    cur = 0;
+    steps = 0;
+    clearTrail();
+    $('#stat-agents').textContent = n.toLocaleString('en-US');
+  }
+
+  function setStrains(n) {
+    if (n === P.strains) return;
+    P.strains = n;
+    gl.bindBuffer(gl.ARRAY_BUFFER, speciesBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, speciesArray(N, n));
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  }
+
+  // ---------------------------------------------------------------- brush
+  const brushBuf = gl.createBuffer();
+  const brushVao = gl.createVertexArray();
+  gl.bindVertexArray(brushVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, brushBuf);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+  gl.bindVertexArray(null);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  const maxPoint = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1];
+  const BRUSH = Math.min(44 * K, maxPoint);
+  const ERASER = Math.min(60 * K, maxPoint);
+  const strokes = [];           // queued {pts, erase}
+
+  function paintQueued() {
+    if (!strokes.length) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, lightFbo);
+    gl.viewport(0, 0, S, S);
+    gl.useProgram(progBrush.p);
+    gl.uniform1f(progBrush.u.u_size, S);
+    gl.bindVertexArray(brushVao);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    for (const s of strokes) {
+      gl.blendEquation(s.erase ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
+      gl.uniform1f(progBrush.u.u_brush, s.erase ? ERASER : BRUSH);
+      gl.uniform1f(progBrush.u.u_amt, s.erase ? 1.0 : 0.5);
+      gl.bindBuffer(gl.ARRAY_BUFFER, brushBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, s.pts, gl.STREAM_DRAW);
+      gl.drawArrays(gl.POINTS, 0, s.pts.length / 2);
+    }
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    strokes.length = 0;
+  }
+
+  // ---------------------------------------------------------------- simulation step
+  const masks = new Float32Array(12);
+  function setStepUniforms() {
+    for (let k = 0; k < 3; k++) {
+      for (let c = 0; c < 3; c++) masks[k * 4 + c] = c === k ? 1 : (c < P.strains ? -P.repel : 0);
+      masks[k * 4 + 3] = 0;
+    }
+    gl.useProgram(progUpdate.p);
+    gl.uniform1i(progUpdate.u.u_trail, 0);
+    gl.uniform1i(progUpdate.u.u_light, 1);
+    gl.uniform1f(progUpdate.u.u_size, S);
+    gl.uniform1f(progUpdate.u.u_radius, RADIUS);
+    gl.uniform4f(progUpdate.u.u_sense, P.sa * DEG, P.ra * DEG, P.so * K, P.ss * K);
+    gl.uniform1f(progUpdate.u.u_wobble, P.wobble * DEG);
+    gl.uniform4fv(progUpdate.u.u_mask, masks);
+    gl.uniform1f(progUpdate.u.u_lightW, 6);
+    gl.uniform1f(progUpdate.u.u_sat, P.sat >= SAT_OFF - 0.01 ? 1e6 : P.sat);
+
+    gl.useProgram(progDeposit.p);
+    gl.uniform1f(progDeposit.u.u_size, S);
+    gl.uniform1f(progDeposit.u.u_deposit, 1);
+
+    const keep = 1 - P.evap / 100;
+    gl.useProgram(progDiffuse.p);
+    gl.uniform1i(progDiffuse.u.u_trail, 0);
+    gl.uniform1f(progDiffuse.u.u_size, S);
+    gl.uniform1f(progDiffuse.u.u_radius, RADIUS);
+    gl.uniform4f(progDiffuse.u.u_decay, keep, keep, keep, 0.95);
+    gl.uniform1f(progDiffuse.u.u_diffuse, P.diff);
+    gl.uniform3fv(progDiffuse.u.u_food, foodArr);
+    gl.uniform1i(progDiffuse.u.u_foodN, food.length);
+    gl.uniform1f(progDiffuse.u.u_foodAmt, P.foodW * Math.min(P.sat, 12));
+  }
+
+  function step() {
+    // 1. agents sense and move (transform feedback, no rasterization)
+    gl.useProgram(progUpdate.p);
+    gl.uniform1ui(progUpdate.u.u_frame, (steps * 2654435761) >>> 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, trailTex[tCur]);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, lightTex);
+    gl.bindVertexArray(vao[cur]);
+    gl.enable(gl.RASTERIZER_DISCARD);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, stateBuf[1 - cur]);
+    gl.beginTransformFeedback(gl.POINTS);
+    gl.drawArrays(gl.POINTS, 0, N);
+    gl.endTransformFeedback();
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+    gl.disable(gl.RASTERIZER_DISCARD);
+    cur = 1 - cur;
+
+    // 2. agents deposit trail
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, trailFbo[tCur]);
+    gl.viewport(0, 0, S, S);
+    gl.useProgram(progDeposit.p);
+    gl.bindVertexArray(vao[cur]);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.drawArrays(gl.POINTS, 0, N);
+    gl.disable(gl.BLEND);
+
+    // 3. trail diffuses and evaporates; food keeps emitting
+    gl.bindFramebuffer(gl.FRAMEBUFFER, trailFbo[1 - tCur]);
+    gl.useProgram(progDiffuse.p);
+    gl.bindTexture(gl.TEXTURE_2D, trailTex[tCur]);
+    gl.bindVertexArray(emptyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    tCur = 1 - tCur;
+
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    steps++;
+  }
+
+  // ---------------------------------------------------------------- render
+  let theme = null;
+  function hex(v) {
+    v = v.trim().replace('#', '');
+    if (v.length === 3) v = v.split('').map((c) => c + c).join('');
+    const n = parseInt(v, 16);
+    return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+  }
+  function readTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    const g = (n) => hex(cs.getPropertyValue(n));
+    theme = {
+      dark: cs.getPropertyValue('--scheme').trim() === '1',
+      bg: g('--agar'), edge: g('--agar-edge'), oat: g('--oat'), lit: g('--lit'),
+      col: [...g('--strain-1'), ...g('--strain-2'), ...g('--strain-3')],
+    };
+  }
+
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.min(2048, Math.round(r.width * dpr)));
+    if (canvas.width !== w) { canvas.width = w; canvas.height = w; }
+  }
+
+  function render() {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(progRender.p);
+    const u = progRender.u;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, trailTex[tCur]);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, lightTex);
+    gl.uniform1i(u.u_trail, 0);
+    gl.uniform1i(u.u_light, 1);
+    gl.uniform1f(u.u_size, S);
+    gl.uniform1f(u.u_radius, RADIUS);
+    gl.uniform1f(u.u_aa, S / canvas.width);
+    const density = N / (Math.PI * RADIUS * RADIUS);
+    gl.uniform1f(u.u_gain, P.exposure * (P.evap / 100) / Math.pow(density / 0.69, 0.6));
+    gl.uniform1i(u.u_dark, theme.dark ? 1 : 0);
+    gl.uniform3fv(u.u_bg, theme.bg);
+    gl.uniform3fv(u.u_edge, theme.edge);
+    gl.uniform3fv(u.u_oat, theme.oat);
+    gl.uniform3fv(u.u_lit, theme.lit);
+    gl.uniform3fv(u.u_col, theme.col);
+    gl.uniform3fv(u.u_food, foodArr);
+    gl.uniform1i(u.u_foodN, food.length);
+    gl.bindVertexArray(emptyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  // ---------------------------------------------------------------- UI: sliders, presets, diagram
+  const SLIDERS = {
+    sa: (v) => v.toFixed(1) + '°',
+    ra: (v) => v.toFixed(1) + '°',
+    so: (v) => v.toFixed(1) + ' px',
+    ss: (v) => v.toFixed(2) + ' px',
+    wobble: (v) => '±' + v.toFixed(0) + '°',
+    evap: (v) => v.toFixed(1) + '%',
+    diff: (v) => Math.round(v * 100) + '%',
+    sat: (v) => v >= SAT_OFF ? 'off' : v.toFixed(1),
+  };
+  function syncSliders() {
+    for (const k in SLIDERS) {
+      const el = document.getElementById('p-' + k);
+      if (document.activeElement !== el || !el.matches(':active')) el.value = P[k];
+      document.getElementById('o-' + k).textContent = SLIDERS[k](P[k]);
+    }
+    drawDiagram();
+  }
+  for (const k in SLIDERS) {
+    const el = document.getElementById('p-' + k);
+    el.addEventListener('input', () => {
+      P[k] = T[k] = parseFloat(el.value);
+      document.getElementById('o-' + k).textContent = SLIDERS[k](P[k]);
+      setPresetState(null);
+      drawDiagram();
+    });
+  }
+
+  const chipBox = $('#chips');
+  for (const [name, pr] of Object.entries(PRESETS)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.dataset.preset = name;
+    b.innerHTML = pr.strains > 1 ? `<span class="dots"><b></b><b></b><b></b></span>${pr.label}` : pr.label;
+    b.addEventListener('click', () => applyPreset(name, true));
+    chipBox.appendChild(b);
+  }
+  function setPresetState(name) {
+    presetName = name;
+    for (const b of chipBox.children) b.setAttribute('aria-pressed', String(b.dataset.preset === name));
+    $('#beh-state').textContent = name ? PRESETS[name].label : 'Custom';
+    $('#beh-note').textContent = name ? PRESETS[name].note : 'Your own settings. Press Mutate to wander through nearby ones.';
+  }
+  function applyPreset(name, morph) {
+    const pr = PRESETS[name];
+    for (const k of KEYS) { T[k] = pr[k]; if (!morph) P[k] = pr[k]; }
+    if (pr.strains !== P.strains) {
+      setStrains(pr.strains);
+    }
+    setPresetState(name);
+    if (!morph) syncSliders();
+  }
+
+  function mutate() {
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    T.sa = Math.round(rnd(8, 75) * 2) / 2;
+    T.ra = Math.round(rnd(8, 75) * 2) / 2;
+    T.so = Math.round(rnd(4, 32) * 2) / 2;
+    T.ss = Math.round(rnd(0.6, 2.4) * 20) / 20;
+    T.wobble = Math.round(rnd(0, 12));
+    T.evap = Math.round(rnd(4, 20) * 2) / 2;
+    T.diff = Math.round(rnd(0.4, 1) * 100) / 100;
+    T.sat = Math.round(rnd(2, 10) * 2) / 2;
+    setPresetState(null);
+  }
+
+  function morphStep() {
+    let moving = false;
+    for (const k of KEYS) {
+      const d = T[k] - P[k];
+      if (Math.abs(d) > 1e-3) { P[k] += d * 0.06; moving = true; }
+      else P[k] = T[k];
+    }
+    if (moving) syncSliders();
+  }
+
+  const svg = $('#diagram');
+  function drawDiagram() {
+    // agent at the bottom, heading straight up; sensor distance drawn roughly to scale
+    const ox = 170, oy = 176;
+    const rad = 40 + P.so * 3.0;
+    const sa = P.sa * DEG, ra = P.ra * DEG, up = Math.PI / 2;
+    const f = (n) => n.toFixed(1);
+    const pt = (a, r) => [ox + Math.cos(a) * r, oy - Math.sin(a) * r];
+    const arc = (a0, a1, r) => {
+      const [x0, y0] = pt(a0, r), [x1, y1] = pt(a1, r);
+      return `M${f(x0)} ${f(y0)} A${f(r)} ${f(r)} 0 0 ${a1 > a0 ? 0 : 1} ${f(x1)} ${f(y1)}`;
+    };
+    const head = (x, y, ang, sz) => {
+      // arrowhead pointing along screen angle ang (math convention, y up)
+      const bx = x - Math.cos(ang) * sz, by = y + Math.sin(ang) * sz;
+      const nx = Math.cos(ang + up) * sz * 0.55, ny = -Math.sin(ang + up) * sz * 0.55;
+      return `M${f(x)} ${f(y)} L${f(bx + nx)} ${f(by + ny)} L${f(bx - nx)} ${f(by - ny)} Z`;
+    };
+    const F = pt(up, rad), L = pt(up + sa, rad), R = pt(up - sa, rad);
+    const saR = rad * 0.66;
+    const raR = 30;
+    const sal = pt(up + sa / 2, saR);
+    const ral = pt(up - ra, raR);
+    const raEnd = pt(up - ra, raR);
+    const stepLen = 8 + P.ss * 6;
+    svg.innerHTML = `
+      <path class="dg-trail" d="M${ox + 26} ${oy + 22} C ${ox + 10} ${oy + 18}, ${ox + 2} ${oy + 10}, ${ox} ${oy}"/>
+      <path class="dg-line" d="M${ox} ${oy} L${f(F[0])} ${f(F[1])} M${ox} ${oy} L${f(L[0])} ${f(L[1])} M${ox} ${oy} L${f(R[0])} ${f(R[1])}"/>
+      <path class="dg-arc" d="${arc(up, up + sa, saR)}"/>
+      <text class="dg-text sa" x="${f(sal[0] - 9)}" y="${f(sal[1])}" text-anchor="end" dominant-baseline="middle">SA ${P.sa.toFixed(0)}°</text>
+      <path class="dg-arc ra" d="${arc(up, up - ra, raR)}"/>
+      <path class="dg-head ra" d="${head(raEnd[0], raEnd[1], up - ra - up, 6)}"/>
+      <text class="dg-text ra" x="${f(ral[0] + 9)}" y="${f(ral[1] + 2)}" text-anchor="start" dominant-baseline="middle">RA ${P.ra.toFixed(0)}°</text>
+      <text class="dg-text soft" x="${ox + 7}" y="${f(oy - rad * 0.82)}" text-anchor="start" dominant-baseline="middle">SO ${P.so.toFixed(0)}</text>
+      <path class="dg-step" d="M${ox} ${oy} L${ox} ${f(oy - stepLen)}"/>
+      <path class="dg-head" d="${head(ox, oy - stepLen - 4, up, 6)}"/>
+      <circle class="dg-agent" cx="${ox}" cy="${oy}" r="6"/>
+      <circle class="dg-sensor hot" cx="${f(F[0])}" cy="${f(F[1])}" r="5.5"/>
+      <circle class="dg-sensor" cx="${f(L[0])}" cy="${f(L[1])}" r="5.5"/>
+      <circle class="dg-sensor" cx="${f(R[0])}" cy="${f(R[1])}" r="5.5"/>
+      <text class="dg-text" x="${f(F[0])}" y="${f(F[1] - 12)}" text-anchor="middle">F</text>
+      <text class="dg-text" x="${f(L[0] - 10)}" y="${f(L[1] - 6)}" text-anchor="end">L</text>
+      <text class="dg-text" x="${f(R[0] + 10)}" y="${f(R[1] - 6)}" text-anchor="start">R</text>
+    `;
+  }
+
+  // ---------------------------------------------------------------- UI: plate controls
+  const playBtn = $('#btn-play');
+  const ICON_PAUSE = '<svg viewBox="0 0 14 14" aria-hidden="true"><rect x="2.5" y="2" width="3" height="10" rx="1"/><rect x="8.5" y="2" width="3" height="10" rx="1"/></svg>';
+  const ICON_PLAY = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 2.2v9.6a.6.6 0 0 0 .9.5l7.7-4.8a.6.6 0 0 0 0-1L4.4 1.7a.6.6 0 0 0-.9.5z"/></svg>';
+  function setPaused(v) {
+    paused = v;
+    playBtn.innerHTML = paused ? ICON_PLAY + 'Play' : ICON_PAUSE + 'Pause';
+  }
+  playBtn.addEventListener('click', () => setPaused(!paused));
+  $('#btn-seed').addEventListener('click', () => seed(N));
+  $('#btn-mutate').addEventListener('click', mutate);
+  const selSeed = $('#sel-seed'), selPop = $('#sel-pop');
+  selSeed.addEventListener('change', () => { seedMode = selSeed.value; seed(N); });
+  selPop.addEventListener('change', () => seed(parseInt(selPop.value, 10)));
+  let speed = 1;
+  $('#sel-speed').addEventListener('change', (e) => { speed = parseInt(e.target.value, 10); });
+
+  const tap = coarse ? 'Tap' : 'Click';
+  const TOOL_NOTES = {
+    oat: `${tap} the plate to drop an oat flake. ${tap} a flake to take it away.`,
+    light: 'Drag across the plate to shine light. Agents avoid lit areas and cannot cross bright ones.',
+    erase: 'Drag to wipe away light and oat flakes.',
+  };
+  function setTool(t) {
+    tool = t;
+    document.getElementById('tool-' + t).checked = true;
+    $('#tool-note').textContent = TOOL_NOTES[t];
+    canvas.style.touchAction = t === 'oat' ? 'manipulation' : 'none';
+    canvas.style.cursor = t === 'oat' ? 'copy' : 'crosshair';
+  }
+  for (const r of document.querySelectorAll('input[name="tool"]')) r.addEventListener('change', () => setTool(r.value));
+
+  function syncFood() {
+    foodArr.fill(0);
+    food.forEach((f, i) => { foodArr[i * 3] = f[0]; foodArr[i * 3 + 1] = f[1]; foodArr[i * 3 + 2] = f[2]; });
+  }
+  function addFood(x, y) {
+    if (food.length >= MAX_FOOD) { $('#tool-note').textContent = `The plate holds ${MAX_FOOD} flakes at most. ${tap} one to remove it.`; return; }
+    food.push([x, y, FOOD_R * (0.85 + Math.random() * 0.35)]);
+    syncFood();
+  }
+  function scatterFood() {
+    food.length = 0;
+    const n = 9;
+    let tries = 0;
+    while (food.length < n && tries++ < 500) {
+      const th = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * RADIUS * 0.82;
+      const x = S / 2 + Math.cos(th) * rr, y = S / 2 + Math.sin(th) * rr;
+      if (food.every((f) => Math.hypot(f[0] - x, f[1] - y) > RADIUS * 0.32)) food.push([x, y, FOOD_R * (0.85 + Math.random() * 0.35)]);
+    }
+    syncFood();
+    $('#tool-note').textContent = TOOL_NOTES[tool];
+  }
+  $('#btn-scatter').addEventListener('click', scatterFood);
+  $('#btn-clear').addEventListener('click', () => { food.length = 0; syncFood(); clearLight(); $('#tool-note').textContent = TOOL_NOTES[tool]; });
+
+  // pointer → grid coordinates (GL space, y up)
+  function toGrid(e) {
+    const r = canvas.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width * S, (1 - (e.clientY - r.top) / r.height) * S];
+  }
+  const insideDish = (x, y) => Math.hypot(x - S / 2, y - S / 2) < RADIUS;
+  let drag = null;
+  function queueStroke(a, b, erase) {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const spacing = (erase ? ERASER : BRUSH) * 0.2;
+    const n = Math.max(1, Math.ceil(len / spacing));
+    const pts = new Float32Array((n + 1) * 2);
+    for (let i = 0; i <= n; i++) {
+      pts[i * 2] = a[0] + (b[0] - a[0]) * i / n;
+      pts[i * 2 + 1] = a[1] + (b[1] - a[1]) * i / n;
+    }
+    strokes.push({ pts, erase });
+    if (erase) {
+      const before = food.length;
+      for (let i = food.length - 1; i >= 0; i--) {
+        const f = food[i];
+        for (let j = 0; j <= n; j++) {
+          if (Math.hypot(pts[j * 2] - f[0], pts[j * 2 + 1] - f[1]) < ERASER * 0.5 + f[2] * 0.6) { food.splice(i, 1); break; }
+        }
+      }
+      if (food.length !== before) syncFood();
+    }
+  }
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const p = toGrid(e);
+    if (tool === 'oat') {
+      const hit = food.findIndex((f) => Math.hypot(f[0] - p[0], f[1] - p[1]) < f[2] * 1.3);
+      if (hit >= 0) { food.splice(hit, 1); syncFood(); $('#tool-note').textContent = TOOL_NOTES.oat; }
+      else if (insideDish(p[0], p[1])) addFood(p[0], p[1]);
+      return;
+    }
+    canvas.setPointerCapture(e.pointerId);
+    drag = { last: p, erase: tool === 'erase' };
+    queueStroke(p, p, drag.erase);
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of (evs.length ? evs : [e])) {
+      const p = toGrid(ev);
+      queueStroke(drag.last, p, drag.erase);
+      drag.last = p;
+    }
+  });
+  const endDrag = () => { drag = null; };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' && document.activeElement.type !== 'range' && document.activeElement.type !== 'radio') return;
+    if (tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (e.code === 'Space' && tag !== 'BUTTON') { e.preventDefault(); setPaused(!paused); }
+    else if (e.key === 'r' || e.key === 'R') seed(N);
+    else if (e.key === 'm' || e.key === 'M') mutate();
+  });
+
+  // theme changes (system setting or the viewer's toggle)
+  const mq = matchMedia('(prefers-color-scheme: dark)');
+  const onTheme = () => readTheme();
+  if (mq.addEventListener) mq.addEventListener('change', onTheme); else mq.addListener(onTheme);
+  new MutationObserver(onTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
+
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); fail('The GPU dropped this plate. Reload the page to start it again.'); });
+
+  // ---------------------------------------------------------------- go
+  readTheme();
+  resize();
+  new ResizeObserver(resize).observe(canvas);
+  applyPreset('foraging', false);
+  setTool('oat');
+  const defaultPop = S === 1024 ? 524288 : 262144;
+  selPop.value = String(defaultPop);
+  seed(defaultPop);
+  scatterFood();
+  setPaused(false);
+
+  // grow a little structure before the first frame is shown
+  setStepUniforms();
+  const warm = reduceMotion ? 360 : 90;
+  for (let i = 0; i < warm; i++) step();
+  if (reduceMotion) setPaused(true);
+
+  const statStep = $('#stat-step');
+  let lastT = performance.now(), slow = 0, fast = 0;
+  function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = now - lastT;
+    lastT = now;
+    morphStep();
+    paintQueued();
+    if (!paused) {
+      setStepUniforms();
+      for (let i = 0; i < stepsPerFrame * speed; i++) step();
+      // keep the frame rate smooth on slower GPUs
+      if (dt > 34) { slow++; fast = 0; } else if (dt < 18) { fast++; slow = 0; }
+      if (slow > 40 && stepsPerFrame > 1) { stepsPerFrame--; slow = 0; }
+      if (fast > 240 && stepsPerFrame < 3) { stepsPerFrame++; fast = 0; }
+    }
+    render();
+    if (frame++ % 10 === 0) statStep.textContent = steps.toLocaleString('en-US');
+  }
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
